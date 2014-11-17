@@ -4,6 +4,19 @@
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
+#maximim number of HTTP servers
+MAX_HTTP_SERVERS = 2
+
+#ip addresses settings
+ips = {
+  "lb" => {"name"=>"lb", "host"=>"lb.dev", "ipaddress"=>"10.66.66.100"},
+  "db" => {"name"=>"db", "host"=>"db.dev", "ipaddress"=>"10.66.66.120"}
+}
+
+(1..MAX_HTTP_SERVERS).each do |i|
+  ips["web#{i}"] = {"name"=>"web#{i}", "host"=>"web#{i}.dev", 'ipaddress'=>"10.66.66.11#{i}"}
+end
+
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # All Vagrant configuration is done here. The most common configuration
   # options are documented and commented below. For a complete reference,
@@ -16,42 +29,64 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     v.memory = 1024
     v.cpus = 2
   end
+
+  #general provisioning of all instances
+  config.vm.provision :chef_solo do |chef|
+    chef.add_recipe "apt"
+    chef.add_recipe "hostnames"
+
+      nodes_hosts_file = []
+
+      ips.each do |key, value|
+        nodes_hosts_file.push ['hostname'=>value["host"], "ipaddress"=>value["ipaddress"]]
+      end
+
+      chef.json = {
+        :hostnames => {
+          :definitions => nodes_hosts_file
+        }
+      }
+  end
   
+  #load balancer
   config.vm.define "lb" do |lb|
     lb.vm.provider "virtualbox" do |v|
-      v.name = "lb"
+      v.name = ips["lb"]["name"]
     end
-	
-	lb.vm.hostname = "lb.dev"
-
-    lb.vm.network "private_network", ip: "10.66.66.100"
-    #lb.vm.network "forwarded_port", guest: 22002, host: 22002
-    #lb.vm.network "forwarded_port", guest: 80, host: 80
+  
+    lb.vm.hostname = ips["lb"]["host"]
+    lb.vm.network "private_network", ip: ips["lb"]["ipaddress"]
 
     lb.vm.provision :chef_solo do |chef|
-	  chef.add_recipe "apt"
-	  chef.add_recipe "apache2"
-	  chef.add_recipe "apache2::mod_rewrite"
-	  chef.add_recipe "apache2::mod_fastcgi"
-	  chef.add_recipe "munin::client"
-	  chef.add_recipe "munin::server"
-	  chef.add_recipe "haproxy"
-	  
+      chef.add_recipe "apache2"
+      chef.add_recipe "apache2::mod_rewrite"
+      chef.add_recipe "apache2::mod_fastcgi"
+      chef.add_recipe "munin::client"
+      chef.add_recipe "munin::server"
+      chef.add_recipe "haproxy"
+
+      haproxy_backend_servers = []
+
+      (1..MAX_HTTP_SERVERS).each do |i|
+        haproxy_backend_servers.push "server " + ips["web#{i}"]["name"] + " " + ips["web#{i}"]["ipaddress"] + ":80 weight 1 maxconn 100 check"
+      end
+
+      munin_nodes = []
+
+      ips.each do |key, value|
+        munin_nodes.push ['fqdn'=>value["host"], "ipaddress"=>value["ipaddress"]]
+      end
+    
       chef.json = {
-		:apache => {
-		  :listen_port => 8080
-		},
+        :apache => {
+          :listen_port => 8080
+        },
         :munin => {
-          :nodes => [
-			  ['fqdn'=>'lb.dev', 'ipaddress'=>'127.0.0.1'],
-		      ['fqdn'=>'web1.dev', 'ipaddress'=>'10.66.66.101'], 
-			  ['fqdn'=>'web2.dev', 'ipaddress'=>'10.66.66.102'],
-			  ['fqdn'=>'db.dev', 'ipaddress'=>'10.66.66.103']
-			]
+          :nodes => munin_nodes
         },
         :haproxy => { 
           :admin => {
-            :address_bind => '10.66.66.100'
+            :address_bind => ips["lb"]["ipaddress"]
           },
           :listeners => {
             :frontend => {
@@ -62,97 +97,67 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
               ]
             },
             :backend => {
-              "servers-http" => [
-			    "server web1 10.66.66.101:80 weight 1 maxconn 100 check",
-				"server web1 10.66.66.102:80 weight 1 maxconn 100 check"
-			  ]
+              "servers-http" => haproxy_backend_servers
             }
           }
         }
       }
-	
     end
-  end
-  
-  config.vm.define "web1" do |web1|
-    web1.vm.provider "virtualbox" do |v|
-      v.name = "web1"
-    end
-	
-    web1.vm.hostname = "web1.dev"
 
-    web1.vm.network "private_network", ip: "10.66.66.101"
-	
-	web1.vm.synced_folder "html/", "/var/www/html", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=750","fmode=644"]
-	
-    web1.vm.provision :chef_solo do |chef|
-	  chef.add_recipe "apt"
-	  chef.add_recipe "apache2"
-	  chef.add_recipe "apache2::mod_rewrite"
-	  chef.add_recipe "apache2::mod_fastcgi"
-	  chef.add_recipe "apache2::mod_php5"
-	  chef.add_recipe "php"
-	  chef.add_recipe "php::module_mysql"
-	  chef.add_recipe "php::module_xdebug"
-	  #chef.add_recipe "php::module_phalcon"
-	  chef.add_recipe "munin::client"
-	  
-      chef.json = {
-        :munin => {
-          :nodes => [
-			  ['fqdn'=>'lb.dev', 'ipaddress'=>'10.66.66.100']
-			]
-        }
-      }
-	end
   end
-  
-  config.vm.define "web2" do |web2|
-    web2.vm.provider "virtualbox" do |v|
-      v.name = "testbox"
-    end
-	
-    web2.vm.hostname = "web2.dev"
 
-    web2.vm.network "private_network", ip: "10.66.66.102"
-	
-	web2.vm.synced_folder "html/", "/var/www/html", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=750","fmode=644"]
-	
-    web2.vm.provision :chef_solo do |chef|
-	  chef.add_recipe "apt"
-	  chef.add_recipe "apache2"
-	  chef.add_recipe "apache2::mod_rewrite"
-	  chef.add_recipe "apache2::mod_fastcgi"
-	  chef.add_recipe "apache2::mod_php5"
-	  chef.add_recipe "php"
-	  chef.add_recipe "php::module_mysql"
-	  chef.add_recipe "php::module_xdebug"
-	  chef.add_recipe "munin::client"
-	  
-      chef.json = {
-        :munin => {
-          :nodes => [
-			  ['fqdn'=>'lb.dev', 'ipaddress'=>'10.66.66.100']
-			]
+  #web servers
+  (1..MAX_HTTP_SERVERS).each do |i|
+
+    config.vm.define "web#{i}" do |web|
+
+      web.vm.provider "virtualbox" do |v|
+        v.name = ips["web#{i}"]["name"]
+      end
+
+      web.vm.hostname = ips["web#{i}"]["host"]
+      web.vm.network "private_network", ip: ips["web#{i}"]["ipaddress"]
+      web.vm.synced_folder "html/", "/var/www/html", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=750","fmode=644"]
+
+      web.vm.provision :chef_solo do |chef|
+        chef.add_recipe "apache2"
+        chef.add_recipe "apache2::mod_rewrite"
+        chef.add_recipe "apache2::mod_fastcgi"
+        chef.add_recipe "apache2::mod_php5"
+        chef.add_recipe "php"
+        chef.add_recipe "php::module_mysql"
+        chef.add_recipe "php::module_xdebug"
+        chef.add_recipe "php::module_phalcon"
+        chef.add_recipe "munin::client"
+      
+        chef.json = {
+          :munin => {
+            :nodes => [
+              ['fqdn'=>ips["lb"]["host"], 'ipaddress'=>ips["lb"]["ipaddress"]]
+            ]
+          }
         }
-      }
-	end
+      end
+
+    end
+
   end
   
+  #database server
   config.vm.define "db" do |db|
-    db.vm.provider "virtualbox" do |v|
-      v.name = "db"
-    end
-	
-    db.vm.hostname = "db.dev"
 
-    db.vm.network "private_network", ip: "10.66.66.103"
-	
+    db.vm.provider "virtualbox" do |v|
+      v.name = ips["db"]["name"]
+    end
+  
+    db.vm.hostname = ips["db"]["host"]
+    db.vm.network "private_network", ip: ips["db"]["ipaddress"]
+  
     db.vm.provision :chef_solo do |chef|
-	  chef.add_recipe "mysql::client"
-	  chef.add_recipe "mysql::server"
-	  chef.add_recipe "munin::client"
-	  
+      chef.add_recipe "mysql::client"
+      chef.add_recipe "mysql::server"
+      chef.add_recipe "munin::client"
+    
       chef.json = {
         :mysql => {
           :server_root_password => '123456',
@@ -160,11 +165,12 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         },
         :munin => {
           :nodes => [
-		      ['fqdn'=>'lb.dev', 'ipaddress'=>'10.66.66.100']
-			]
+            ['fqdn'=>ips["lb"]["host"], 'ipaddress'=>ips["lb"]["ipaddress"]]
+          ]
         }
       }
-	end
+    end
+
   end
   
   # Disable automatic box update checking. If you disable this, then

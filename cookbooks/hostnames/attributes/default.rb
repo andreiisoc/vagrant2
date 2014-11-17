@@ -1,0 +1,1 @@
+default['hostnames']['definitions'] = [['fqdn'=>'localhost', 'ipaddress'=>'127.0.0.1']]
