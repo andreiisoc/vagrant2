@@ -3,6 +3,8 @@ package "apache2" do
 end
 
 service "apache2" do
+  #service_name "apache2"
+  #provider Chef::Provider::Service::Upstart
   supports :status => true, :start => true, :restart => true, :reload => true
   action [ :enable, :start ]
 end

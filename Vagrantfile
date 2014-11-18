@@ -17,35 +17,27 @@ ips = {
   ips["web#{i}"] = {"name"=>"web#{i}", "host"=>"web#{i}.dev", 'ipaddress'=>"10.66.66.11#{i}"}
 end
 
+#setting up /etc/hosts with the defined ip address
+nodes_hosts_file = []
+
+ips.each do |key, value|
+  nodes_hosts_file.push ['hostname'=>value["host"], "ipaddress"=>value["ipaddress"]]
+end
+
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # All Vagrant configuration is done here. The most common configuration
   # options are documented and commented below. For a complete reference,
   # please see the online documentation at vagrantup.com.
 
+  #omnibuss plugin(vagrant plugin install vagrant-omnibus)
+  config.omnibus.chef_version = :latest
+
   # Every Vagrant virtual environment requires a box to build off of.
-  config.vm.box = "https://oss-binaries.phusionpassenger.com/vagrant/boxes/latest/ubuntu-14.04-amd64-vbox.box"
+  config.vm.box = "chef/ubuntu-14.04"
 
   config.vm.provider "virtualbox" do |v|
-    v.memory = 1024
-    v.cpus = 2
-  end
-
-  #general provisioning of all instances
-  config.vm.provision :chef_solo do |chef|
-    chef.add_recipe "apt"
-    chef.add_recipe "hostnames"
-
-      nodes_hosts_file = []
-
-      ips.each do |key, value|
-        nodes_hosts_file.push ['hostname'=>value["host"], "ipaddress"=>value["ipaddress"]]
-      end
-
-      chef.json = {
-        :hostnames => {
-          :definitions => nodes_hosts_file
-        }
-      }
+    v.memory = 2048
+    v.cpus = 4
   end
   
   #load balancer
@@ -58,6 +50,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     lb.vm.network "private_network", ip: ips["lb"]["ipaddress"]
 
     lb.vm.provision :chef_solo do |chef|
+      chef.custom_config_path = "Vagrantfile.chef"
+
+      chef.add_recipe "apt"
+      chef.add_recipe "hostnames"
       chef.add_recipe "apache2"
       chef.add_recipe "apache2::mod_rewrite"
       chef.add_recipe "apache2::mod_fastcgi"
@@ -100,6 +96,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
               "servers-http" => haproxy_backend_servers
             }
           }
+        },
+        :hostnames => {
+          :definitions => nodes_hosts_file
         }
       }
     end
@@ -120,6 +119,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       web.vm.synced_folder "html/", "/var/www/html", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=750","fmode=644"]
 
       web.vm.provision :chef_solo do |chef|
+        chef.custom_config_path = "Vagrantfile.chef"
+
+        chef.add_recipe "apt"
+        chef.add_recipe "hostnames"
         chef.add_recipe "apache2"
         chef.add_recipe "apache2::mod_rewrite"
         chef.add_recipe "apache2::mod_fastcgi"
@@ -135,6 +138,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
             :nodes => [
               ['fqdn'=>ips["lb"]["host"], 'ipaddress'=>ips["lb"]["ipaddress"]]
             ]
+          },
+          :hostnames => {
+            :definitions => nodes_hosts_file
           }
         }
       end
@@ -154,6 +160,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     db.vm.network "private_network", ip: ips["db"]["ipaddress"]
   
     db.vm.provision :chef_solo do |chef|
+      chef.custom_config_path = "Vagrantfile.chef"
+
+      chef.add_recipe "apt"
+      chef.add_recipe "hostnames"
       chef.add_recipe "mysql::client"
       chef.add_recipe "mysql::server"
       chef.add_recipe "munin::client"
@@ -167,6 +177,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
           :nodes => [
             ['fqdn'=>ips["lb"]["host"], 'ipaddress'=>ips["lb"]["ipaddress"]]
           ]
+        },
+        :hostnames => {
+          :definitions => nodes_hosts_file
         }
       }
     end
