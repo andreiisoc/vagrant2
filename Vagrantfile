@@ -36,8 +36,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.box = "chef/ubuntu-14.04"
 
   config.vm.provider "virtualbox" do |v|
-    v.memory = 2048
-    v.cpus = 4
+    v.memory = 1024
+    v.cpus = 2
   end
   
   #load balancer
@@ -116,10 +116,13 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
       web.vm.hostname = ips["web#{i}"]["host"]
       web.vm.network "private_network", ip: ips["web#{i}"]["ipaddress"]
-      web.vm.synced_folder "html/", "/var/www/html", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=750","fmode=644"]
+      web.vm.synced_folder "html/", "/var/www/html", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=770","fmode=644"]
 
       web.vm.provision :chef_solo do |chef|
         chef.custom_config_path = "Vagrantfile.chef"
+
+        chef.environments_path = "environments"
+        chef.environment = "dev"
 
         chef.add_recipe "apt"
         chef.add_recipe "hostnames"

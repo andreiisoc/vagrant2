@@ -4,7 +4,7 @@ end
 
 service "mysql" do
   #service_name "mysql"
-  #provider Chef::Provider::Service::Upstart
+  provider Chef::Provider::Service::Upstart
   supports :status => true, :start => true, :restart => true, :stop => true, :reload => true
   action [ :enable, :start ]
 end
