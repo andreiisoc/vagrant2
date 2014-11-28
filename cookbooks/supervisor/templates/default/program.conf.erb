@@ -1,0 +1,7 @@
+[program:<%= @config.name %>]
+command=php <%= @config.location %>
+process_name=%(program_name)s_%(process_num)02d
+numprocs=<%= @config.tasks %>
+autostart=true
+autorestart=true
+stopsignal=KILL

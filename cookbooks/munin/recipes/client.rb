@@ -2,6 +2,14 @@ package "munin-node" do
   action :install
 end
 
+package "libwww-perl" do
+  action :install
+end
+
+package "munin-plugins-extra" do
+  action :install
+end
+
 service "munin-node" do
   #service_name "munin-node"
   #provider Chef::Provider::Service::Upstart
@@ -16,9 +24,17 @@ template "/etc/munin/munin-node.conf" do
   variables(
     :munin_nodes => node['munin']['nodes']
   )
-  notifies :restart, "service[munin-node]", :delayed 
+  notifies :restart, "service[munin-node]", :delayed
 end
 
-file "/var/www/html/index.html" do
-  action :delete
+execute "install mysql mod dependency" do
+  command "apt-get install libcache-cache-perl -y"
+  action :run
+  only_if { ::File.exists?("/etc/mysql/my.cnf")}
+end
+
+execute "install suggested modules" do
+  command "sudo /usr/sbin/munin-node-configure --shell | sudo sh"
+  action :run
+  notifies :restart, "service[munin-node]", :delayed
 end

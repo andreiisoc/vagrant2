@@ -20,3 +20,7 @@ template "/etc/apache2/sites-available/000-default.conf" do
   mode   '0644' 
   notifies :reload, "service[apache2]", :delayed 
 end
+
+file "/var/www/html/index.html" do
+  action :delete
+end

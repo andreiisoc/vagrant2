@@ -57,6 +57,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       chef.add_recipe "apache2"
       chef.add_recipe "apache2::mod_rewrite"
       chef.add_recipe "apache2::mod_fastcgi"
+      chef.add_recipe "apache2::mod_status"
+      chef.add_recipe "apache2::mod_info"
       chef.add_recipe "munin::client"
       chef.add_recipe "munin::server"
       chef.add_recipe "haproxy"
@@ -130,11 +132,14 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         chef.add_recipe "apache2::mod_rewrite"
         chef.add_recipe "apache2::mod_fastcgi"
         chef.add_recipe "apache2::mod_php5"
+        chef.add_recipe "apache2::mod_status"
+        chef.add_recipe "apache2::mod_info"
         chef.add_recipe "php"
         chef.add_recipe "php::module_mysql"
         chef.add_recipe "php::module_xdebug"
         chef.add_recipe "php::module_phalcon"
         chef.add_recipe "munin::client"
+        chef.add_recipe "webgrind"
       
         chef.json = {
           :munin => {
@@ -167,7 +172,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
       chef.add_recipe "apt"
       chef.add_recipe "hostnames"
-      chef.add_recipe "mysql::client"
       chef.add_recipe "mysql::server"
       chef.add_recipe "munin::client"
     
@@ -179,6 +183,52 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         :munin => {
           :nodes => [
             ['fqdn'=>ips["lb"]["host"], 'ipaddress'=>ips["lb"]["ipaddress"]]
+          ]
+        },
+        :hostnames => {
+          :definitions => nodes_hosts_file
+        }
+      }
+    end
+
+  end
+
+  #test server
+  config.vm.define "test", autostart: false do |test|
+
+    test.vm.provider "virtualbox" do |v|
+      v.name = "test"
+      v.memory = 2048
+      v.cpus = 8
+    end
+  
+    test.vm.hostname = "test.dev"
+    test.vm.network "private_network", ip: "10.66.66.150"
+
+    nodes_hosts_file.push ['hostname'=>'test.dev', "ipaddress"=>'10.66.66.150']
+
+    test.vm.provision :chef_solo do |chef|
+      chef.custom_config_path = "Vagrantfile.chef"
+
+      chef.add_recipe "apt"
+      chef.add_recipe "hostnames"
+      chef.add_recipe "gearman-job"
+      chef.add_recipe "gearman-job::mysqlpersistence"
+      chef.add_recipe "php"
+      chef.add_recipe "php::gearman"
+      chef.add_recipe "supervisor"
+
+      chef.json = {
+        :gearmanmysql => {
+          :host => 'db.dev',
+          :user => 'root',
+          :password => '123456'
+        },
+        :supervisor => {
+          :ipaddress => '10.66.66.150',
+          :processes => [
+            {"name" => "worker-a", "location" => "/home/vagrant/worker.php", "tasks" => "3"},
+            {"name" => "worker-b", "location" => "/home/vagrant/worker.php", "tasks" => "5"}
           ]
         },
         :hostnames => {
