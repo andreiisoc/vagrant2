@@ -7,10 +7,15 @@ VAGRANTFILE_API_VERSION = "2"
 #maximim number of HTTP servers
 MAX_HTTP_SERVERS = 2
 
+#mysql root pass
+MYSQL_ROOT = '123456'
+
 #ip addresses settings
 ips = {
   "lb" => {"name"=>"lb", "host"=>"lb.dev", "ipaddress"=>"10.66.66.100"},
-  "db" => {"name"=>"db", "host"=>"db.dev", "ipaddress"=>"10.66.66.120"}
+  "fe" => {"name"=>"fe", "host"=>"fe.dev", "ipaddress"=>"10.66.66.105"},
+  "db" => {"name"=>"db", "host"=>"db.dev", "ipaddress"=>"10.66.66.120"},
+  "gm" => {"name"=>"gm", "host"=>"gm.dev", "ipaddress"=>"10.66.66.130"}
 }
 
 (1..MAX_HTTP_SERVERS).each do |i|
@@ -107,6 +112,39 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   end
 
+  #frontend server
+  config.vm.define "fe" do |fe|
+
+    fe.vm.provider "virtualbox" do |v|
+      v.name = ips["fe"]["name"]
+    end
+  
+    fe.vm.hostname = ips["fe"]["host"]
+    fe.vm.network "private_network", ip: ips["fe"]["ipaddress"]
+    fe.vm.synced_folder "front/", "/var/www/html", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=770","fmode=644"]
+  
+    fe.vm.provision :chef_solo do |chef|
+      chef.custom_config_path = "Vagrantfile.chef"
+
+      chef.add_recipe "apt"
+      chef.add_recipe "hostnames"
+      chef.add_recipe "apache2"
+      chef.add_recipe "munin::client"
+
+      chef.json = {
+        :munin => {
+          :nodes => [
+            ['fqdn'=>ips["lb"]["host"], 'ipaddress'=>ips["lb"]["ipaddress"]]
+          ]
+        },
+        :hostnames => {
+          :definitions => nodes_hosts_file
+        }
+      }
+    end
+
+  end
+
   #web servers
   (1..MAX_HTTP_SERVERS).each do |i|
 
@@ -177,8 +215,58 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     
       chef.json = {
         :mysql => {
-          :server_root_password => '123456',
-          :allow_remote_root => true
+          :server_root_password => MYSQL_ROOT,
+          :allow_remote_root => true,
+          :gearman_enable => true
+        },
+        :munin => {
+          :nodes => [
+            ['fqdn'=>ips["lb"]["host"], 'ipaddress'=>ips["lb"]["ipaddress"]]
+          ]
+        },
+        :hostnames => {
+          :definitions => nodes_hosts_file
+        }
+      }
+    end
+
+  end
+
+  #gearman server
+  config.vm.define "gm" do |gm|
+
+    gm.vm.provider "virtualbox" do |v|
+      v.name = ips["gm"]["name"]
+    end
+  
+    gm.vm.hostname = ips["gm"]["host"]
+    gm.vm.network "private_network", ip: ips["gm"]["ipaddress"]
+    gm.vm.synced_folder "workers/", "/var/www/workers", :owner => "vagrant", :group => "www-data", :mount_options => ["dmode=770","fmode=644"]
+  
+    gm.vm.provision :chef_solo do |chef|
+      chef.custom_config_path = "Vagrantfile.chef"
+
+      chef.add_recipe "apt"
+      chef.add_recipe "hostnames"
+      chef.add_recipe "gearman-job"
+      chef.add_recipe "gearman-job::mysqlpersistence"
+      chef.add_recipe "php"
+      chef.add_recipe "php::gearman"
+      chef.add_recipe "supervisor"
+      chef.add_recipe "munin::client"
+
+      chef.json = {
+        :gearmanmysql => {
+          :host => ips["db"]["host"],
+          :user => 'root',
+          :password => MYSQL_ROOT
+        },
+        :supervisor => {
+          :ipaddress => ips["gm"]["ipaddress"],
+          :processes => [
+            {"name" => "worker-a", "location" => "/var/www/workers/worker.php", "tasks" => "1"},
+            {"name" => "worker-b", "location" => "/var/www/workers/worker.php", "tasks" => "2"}
+          ]
         },
         :munin => {
           :nodes => [

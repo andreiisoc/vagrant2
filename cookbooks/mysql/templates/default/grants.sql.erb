@@ -9,6 +9,11 @@
 	DELETE FROM mysql.user WHERE User='';
 <% end %>
 
+<% if @config.gearman_enable -%>
+	DROP DATABASE IF EXISTS gearman;
+	CREATE DATABASE gearman;
+<% end %>
+
 DROP DATABASE IF EXISTS test;
 DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%';
 

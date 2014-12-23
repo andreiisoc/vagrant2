@@ -12,4 +12,5 @@ service "gearman-job-server" do
   action [ :enable, :start ]
   restart_command "sudo service gearman-job-server restart"
   status_command "sudo service gearman-job-server status"
+  start_command "sudo service  gearman-job-server stop && sudo service gearman-job-server start"
 end
